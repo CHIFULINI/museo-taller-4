@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Museo de la Lucha</title>
+<script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+<script src="https://unpkg.com/aframe-event-set-component@5.0.0/dist/aframe-event-set-component.min.js"></script>
+<script src="https://unpkg.com/aframe-troika-text/dist/aframe-troika-text.min.js"></script>
+<script>
+/* Si la imagen no existe el cuadro queda gris; al cargarla se ve normal */
+AFRAME.registerComponent('foto', {
+  init() {
+    const e = this.el; e.setAttribute('color', '#777');
+    e.addEventListener('materialtextureloaded', () => e.setAttribute('color', '#fff'));
+  }
+});
+ 
+/* Movimiento de los modelos 3D: al mirarlos crecen y se acercan; al dejar de mirarlos vuelven.
+   Se ajusta en el atributo hover-modelo de cada modelo (mover: z positivo = hacia el visitante) */
+AFRAME.registerComponent('hover-modelo', {
+  schema: {
+    reposo: { default: 2 },
+    escala: { default: 4 },
+    mover:  { type: 'vec3', default: { x: 0, y: 0.5, z: 1.5 } },
+    dur:    { default: 500 }
+  },
+  init() {
+    this.entra = () => this.ir(true);
+    this.sale  = () => this.ir(false);
+    this.el.addEventListener('mouseenter', this.entra);
+    this.el.addEventListener('mouseleave', this.sale);
+  },
+  ir(dentro) {
+    const d = this.data, s = dentro ? d.escala : d.reposo, p = dentro ? d.mover : { x: 0, y: 0, z: 0 };
+    const cfg = { dur: d.dur, easing: 'easeOutQuad' };
+    this.el.setAttribute('animation__escala', Object.assign({ property: 'scale', to: `${s} ${s} ${s}` }, cfg));
+    this.el.setAttribute('animation__pos', Object.assign({ property: 'position', to: `${p.x} ${p.y} ${p.z}` }, cfg));
+  },
+  remove() {
+    this.el.removeEventListener('mouseenter', this.entra);
+    this.el.removeEventListener('mouseleave', this.sale);
+  }
+});
+ 
+/* Genera la arquitectura del coliseo (el visitante está en el centro, R = radio de la arena) */
+AFRAME.registerComponent('coliseo', {
+  init() {
+    const e = this.el, R = 8, rad = Math.PI / 180;
+    const mk = (p, t, a) => { const n = document.createElement(t); for (const k in a) n.setAttribute(k, a[k]); p.appendChild(n); return n; };
+    const pos = (r, a, y) => `${(-r * Math.sin(a * rad)).toFixed(2)} ${y} ${(-r * Math.cos(a * rad)).toFixed(2)}`;
+    const anillo = (i, o, y, c) => mk(e, 'a-ring', { 'radius-inner': i, 'radius-outer': o, rotation: '-90 0 0', position: `0 ${y} 0`, color: c, 'segments-theta': 64 });
+ 
+    /* ---- ARENA ---- */
+    mk(e, 'a-circle', { radius: R, rotation: '-90 0 0', color: '#d9b97b', segments: 64 });
+    [[1.3, 1.45, '#a8803f'], [3.2, 3.3, '#b99456'], [5.6, 5.7, '#b99456'], [7.5, 7.9, '#a8803f']].forEach(r => anillo(r[0], r[1], 0.01, r[2]));
+    mk(e, 'a-circle', { radius: 90, rotation: '-90 0 0', position: '0 -0.05 0', color: '#9c8c6a' });
+ 
+    /* ---- MURO DEL PODIO: zócalo, cornisa, pilares y arcos ---- */
+    mk(e, 'a-cylinder', { radius: R - 0.05, height: 0.4, position: '0 0.2 0', color: '#b99456', side: 'double', 'open-ended': true, 'segments-radial': 64 });
+    mk(e, 'a-cylinder', { radius: R - 0.1, height: 0.3, position: '0 4.05 0', color: '#eadbb5', side: 'double', 'open-ended': true, 'segments-radial': 64 });
+    for (let k = 0; k < 8; k++) {
+      [-12.5, 12.5, 22.5].forEach(o => {            /* pilares con base y capitel */
+        const a = k * 45 + o, p = pos(R - 0.15, a, 0);
+        const [x, , z] = p.split(' ');
+        mk(e, 'a-cylinder', { radius: 0.2, height: 3.8, position: `${x} 1.9 ${z}`, color: '#eadbb5' });
+        mk(e, 'a-box', { width: 0.5, height: 0.2, depth: 0.5, position: `${x} 0.1 ${z}`, rotation: `0 ${a} 0`, color: '#d9c493' });
+        mk(e, 'a-box', { width: 0.55, height: 0.2, depth: 0.55, position: `${x} 3.9 ${z}`, rotation: `0 ${a} 0`, color: '#d9c493' });
+      });
+      [17.5, 27.5].forEach(o => {                   /* arcos oscuros entre estaciones */
+        const v = mk(e, 'a-entity', { rotation: `0 ${k * 45 + o} 0` }), z = -R + 0.05;
+        mk(v, 'a-plane',  { width: 1.15, height: 2.1, position: `0 1.05 ${z - 0.01}`, color: '#efe0b8', shader: 'flat' });
+        mk(v, 'a-circle', { radius: 0.575, position: `0 2.1 ${z - 0.01}`, color: '#efe0b8', shader: 'flat', segments: 24 });
+        mk(v, 'a-plane',  { width: 0.95, height: 2.0, position: `0 1.0 ${z}`, color: '#2a1d14', shader: 'flat' });
+        mk(v, 'a-circle', { radius: 0.475, position: `0 2.0 ${z}`, color: '#2a1d14', shader: 'flat', segments: 24 });
+      });
+      /* antorchas en el centro de cada tramo */
+      const [tx, , tz] = pos(R - 0.55, k * 45 + 22.5, 0).split(' ');
+      mk(e, 'a-cylinder', { radius: 0.05, height: 1.3, position: `${tx} 0.65 ${tz}`, color: '#3a2a1a' });
+      mk(e, 'a-cone', { 'radius-bottom': 0.12, 'radius-top': 0.25, height: 0.2, position: `${tx} 1.4 ${tz}`, color: '#6b4a22' });
+      mk(e, 'a-cone', { 'radius-bottom': 0.18, 'radius-top': 0, height: 0.55, position: `${tx} 1.75 ${tz}`, color: '#ff9a1f', shader: 'flat',
+        animation: 'property: scale; dir: alternate; from: 1 1 1; to: 1.15 1.4 1.15; dur: 350; loop: true; easing: easeInOutSine' });
+    }
+ 
+    /* ---- GRADAS: 15 escalones + galería intermedia con vomitorios ---- */
+    let h = 0;
+    for (let i = 0; i < 15; i++) {
+      const dh = i === 0 ? 4.2 : i === 7 ? 1.6 : 0.5, c = i % 2 ? '#cdaa72' : '#d8b983', hp = h, r = R + i * 0.75;
+      h += dh;
+      mk(e, 'a-cylinder', { radius: r, height: dh, position: `0 ${hp + dh / 2} 0`, color: c, side: 'double', 'open-ended': true, 'segments-radial': 64 });
+      anillo(r, r + 0.75, h, i % 2 ? '#c2a06a' : '#cfb07a');
+      anillo(r + 0.65, r + 0.75, h + 0.005, '#8c6d3b');            /* sombra al pie de cada escalón */
+      if (i === 7) for (let j = 0; j < 12; j++) {                    /* vomitorios */
+        const v = mk(e, 'a-entity', { rotation: `0 ${j * 30 + 15} 0` }), z = -(r - 0.03);
+        mk(v, 'a-plane',  { width: 0.9, height: 1.1, position: `0 ${hp + 0.55} ${z}`, color: '#2a1d14', shader: 'flat' });
+        mk(v, 'a-circle', { radius: 0.45, position: `0 ${hp + 1.1} ${z}`, color: '#2a1d14', shader: 'flat', segments: 20 });
+      }
+    }
+ 
+    /* ---- ÁTICO SUPERIOR: muro con ventanas, pilastras y cornisa ---- */
+    const ra = R + 15 * 0.75;
+    mk(e, 'a-cylinder', { radius: ra, height: 3, position: `0 ${h + 1.5} 0`, color: '#d8b983', side: 'double', 'open-ended': true, 'segments-radial': 64 });
+    mk(e, 'a-cylinder', { radius: ra + 0.15, height: 0.4, position: `0 ${h + 3.2} 0`, color: '#eadbb5', side: 'double', 'open-ended': true, 'segments-radial': 64 });
+    for (let j = 0; j < 24; j++) {
+      const [px, , pz] = pos(ra - 0.15, j * 15, 0).split(' '), [wx, , wz] = pos(ra - 0.03, j * 15 + 7.5, 0).split(' ');
+      mk(e, 'a-cylinder', { radius: 0.2, height: 3, position: `${px} ${h + 1.5} ${pz}`, color: '#eadbb5' });
+      mk(e, 'a-plane', { width: 0.9, height: 1.5, position: `${wx} ${h + 1.5} ${wz}`, rotation: `0 ${j * 15 + 7.5} 0`, color: '#2a1d14', shader: 'flat' });
+    }
+  }
+});
+</script>
+</head>
+<body>
+<div style="position:fixed;bottom:10px;left:10px;z-index:9;font:13px sans-serif;color:#fff;background:#0007;padding:6px 10px;border-radius:6px">
+  Arrastra para mirar alrededor
+</div>
+ 
+<a-scene xr-mode-ui="enterAREnabled: false">
+  <a-assets>
+    <!-- Estilos reutilizables de las estaciones: cambia aquí y se aplica a las 8 -->
+    <a-mixin id="marco"  geometry="width: 2.8; height: 2.8; depth: 0.1" material="color: #8a6a1f; metalness: 0.4; roughness: 0.5"></a-mixin>
+    <a-mixin id="imagen" geometry="width: 2.4; height: 2.4"></a-mixin>
+    <!-- Textos con Troika: títulos y placas usan Romanesco; las fichas usan la fuente por defecto (agrega font: texturas/... para cambiarla) -->
+    <a-mixin id="titulo" troika-text="font: texturas/Romanesco-Regular.ttf; fontSize: 0.3; maxWidth: 4.5; align: center; anchor: center; baseline: bottom; color: #4a2f12"></a-mixin>
+    <a-mixin id="texto-ficha" troika-text="fontSize: 0.07; maxWidth: 1.4; align: left; anchor: center; baseline: center; color: #2b1d0e"></a-mixin>
+    <a-mixin id="texto-placa" troika-text="font: texturas/Romanesco-Regular.ttf; fontSize: 0.1; maxWidth: 0.85; align: center; anchor: center; baseline: center; color: #2b1d0e"></a-mixin>
+    <a-mixin id="pata"   geometry="radius: 0.08; height: 1" material="color: #efe6d0"></a-mixin>
+    <a-mixin id="tabla"  geometry="width: 1.7; height: 0.1; depth: 0.9" material="color: #efe6d0" rotation="30 0 0"></a-mixin>
+    <a-mixin id="ficha"  geometry="width: 1.6; height: 0.85" material="color: #f3e9c8" rotation="-60 0 0"></a-mixin>
+    <a-mixin id="base-stand"  geometry="radius: 1.2; height: 0.3" material="color: #cdb892"></a-mixin>
+    <a-mixin id="pedestal"    geometry="radius: 0.7; height: 0.8" material="color: #eadbb5"></a-mixin>
+    <a-mixin id="placa"       geometry="width: 0.9; height: 0.28" material="color: #d4af37; metalness: 0.7; roughness: 0.4"></a-mixin>
+  </a-assets>
+ 
+  <!-- Cámara fija en el centro; el cursor solo detecta los modelos (clase "hover") -->
+  <a-entity camera look-controls position="0 1.6 0">
+    <a-cursor raycaster="objects: .hover" fuse="true" fuse-timeout="1500"></a-cursor>
+  </a-entity>
+ 
+  <a-sky color="#8fc1e8"></a-sky>
+  <a-entity light="type: ambient; color: #fff1da; intensity: 0.8"></a-entity>
+  <a-entity light="type: directional; color: #fff1d6; intensity: 0.8" position="-6 20 8"></a-entity>
+ 
+  <!-- Arquitectura del coliseo (generada por el script de arriba) -->
+  <a-entity coliseo></a-entity>
+ 
+  <!-- ESTACIÓN 1 -->
+  <a-entity id="estacion1" rotation="0 0 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra1" mixin="imagen" foto src="texturas/origenes.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo1" mixin="titulo" value="origenes de la lucha" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha1" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="La lucha tiene sus raíces en la antigua Grecia, donde era practicada como ejercicio físico y disciplina deportiva. Formaba parte de los Juegos Olímpicos antiguos y exigía fuerza, técnica y habilidad." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 2 -->
+  <a-entity id="estacion2" rotation="0 45 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra2" mixin="imagen" foto src="texturas/lucharoma.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo2" mixin="titulo" value="La lucha en Roma" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha2" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="En la antigua Roma, los espectáculos públicos reunían a grandes multitudes. Aunque el Coliseo se asocia principalmente con combates de gladiadores y cacerías de animales, la lucha también formaba parte de la cultura física del mundo grecorromano." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 3 -->
+  <a-entity id="estacion3" rotation="0 90 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra3" mixin="imagen" foto src="texturas/estatuasimagen.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo3" mixin="titulo" value="El cuerpo y la tecnica" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha3" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="La lucha grecorromana se caracteriza por los agarres y las proyecciones realizadas con el tren superior del cuerpo. A diferencia de otras modalidades, no permite agarrar al rival por debajo de la cintura ni utilizar activamente las piernas para ejecutar ataques." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 4 -->
+  <a-entity id="estacion4" rotation="0 135 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra4" mixin="imagen" foto src="texturas/lucha2.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo4" mixin="titulo" value="Las reglas del combate" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha4" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="El objetivo es controlar al oponente y conseguir puntos mediante acciones técnicas. Un luchador puede ganar por superioridad técnica o al lograr una victoria por toque, cuando mantiene los hombros del rival sobre el tapiz según las reglas." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 5 -->
+  <a-entity id="estacion5" rotation="0 180 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra5" mixin="imagen" foto src="texturas/entreno lucha.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo5" mixin="titulo" value="La preparacion del luchador" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha5" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="Detrás de cada combate existen horas de entrenamiento. Los deportistas desarrollan fuerza, resistencia, equilibrio y coordinación, además de concentración y disciplina para tomar decisiones bajo presión." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 6 -->
+  <a-entity id="estacion6" rotation="0 225 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra6" mixin="imagen" foto src="texturas/suplex.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo6" mixin="titulo" value="La lucha en los Juegos Olimpicos" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha6" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="La lucha grecorromana moderna llegó a los primeros Juegos Olímpicos de la era moderna en Atenas, en 1896. Desde entonces, se ha convertido en una disciplina internacional que reúne a atletas de distintos países." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 7 -->
+  <a-entity id="estacion7" rotation="0 270 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra7" mixin="imagen" foto src="texturas/luchaimagen1.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo7" mixin="titulo" value="El combate en accion" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha7" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="Cada combate es una combinación de estrategia, fuerza y reacción. Los luchadores deben anticipar los movimientos del rival, aprovechar sus oportunidades y mantener el control sin perder el equilibrio." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- ESTACIÓN 8 -->
+  <a-entity id="estacion8" rotation="0 315 0">
+    <a-box mixin="marco" position="0 2.25 -7.78"></a-box>
+    <a-plane id="obra8" mixin="imagen" foto src="texturas/lucha8.jpg" position="0 2.25 -7.7"></a-plane>
+    <a-troika-text id="titulo8" mixin="titulo" value="El legado de la lucha" position="0 3.72 -7.7"></a-troika-text>
+    <a-cylinder mixin="pata" position="0 0.5 -6.4"></a-cylinder>
+    <a-box mixin="tabla" position="0 1.05 -6.4"></a-box>
+    <a-plane id="ficha8" mixin="ficha" position="0 1.12 -6.36"><a-troika-text mixin="texto-ficha" value="La lucha grecorromana representa mucho más que una competencia física. Su práctica transmite valores como el respeto, la perseverancia, el autocontrol y la superación personal.
+ 
+La verdadera fuerza también está en la disciplina y el respeto." position="0 0 0.01"></a-troika-text></a-plane>
+  </a-entity>
+ 
+  <!-- STAND 3D 1 -->
+  <a-entity id="stand1" rotation="0 22.5 0">
+    <a-cylinder mixin="base-stand" position="0 0.15 -4.8"></a-cylinder>
+    <a-cylinder mixin="pedestal" position="0 0.7 -4.8"></a-cylinder>
+    <a-plane mixin="placa" position="0 0.6 -4.09"><a-troika-text mixin="texto-placa" value="suplex" position="0 0 0.01"></a-troika-text></a-plane>
+    <a-entity id="modelo1" position="0 1.1 -4.8">
+      <a-gltf-model class="hover" src="texturas/luchadores.glb" scale="2 2 2"
+        animation__giro="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"
+        hover-modelo="reposo: 2; escala: 4; mover: 0 0.5 1.5"></a-gltf-model>
+    </a-entity>
+  </a-entity>
+ 
+  <!-- STAND 3D 2 -->
+  <a-entity id="stand2" rotation="0 142.5 0">
+    <a-cylinder mixin="base-stand" position="0 0.15 -4.8"></a-cylinder>
+    <a-cylinder mixin="pedestal" position="0 0.7 -4.8"></a-cylinder>
+    <a-plane mixin="placa" position="0 0.6 -4.09"><a-troika-text mixin="texto-placa" value="victoria" position="0 0 0.01"></a-troika-text></a-plane>
+    <a-entity id="modelo2" position="0 1.1 -4.8">
+      <a-gltf-model class="hover" src="texturas/luchadorvictoria.glb" scale="2 2 2"
+        animation__giro="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"
+        hover-modelo="reposo: 2; escala: 4; mover: 0 0.5 1.5"></a-gltf-model>
+    </a-entity>
+  </a-entity>
+ 
+  <!-- STAND 3D 3 -->
+  <a-entity id="stand3" rotation="0 262.5 0">
+    <a-cylinder mixin="base-stand" position="0 0.15 -4.8"></a-cylinder>
+    <a-cylinder mixin="pedestal" position="0 0.7 -4.8"></a-cylinder>
+    <a-plane mixin="placa" position="0 0.6 -4.09"><a-troika-text mixin="texto-placa" value="representaciones" position="0 0 0.01"></a-troika-text></a-plane>
+    <a-entity id="modelo3" position="0 1.1 -4.8">
+      <a-gltf-model class="hover" src="texturas/estatuasluchando.glb" scale="2 2 2"
+        animation__giro="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"
+        hover-modelo="reposo: 2; escala: 4; mover: 0 0.5 1.5"></a-gltf-model>
+    </a-entity>
+  </a-entity>
+</a-scene>
+</body>
+</html>
